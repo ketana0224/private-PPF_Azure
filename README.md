@@ -7,11 +7,11 @@
 インターネットへ経路を出さずに、Power Platform（Copilot Studio エージェント）から社内 API 相当のサービスへ**プライベート接続**するリファレンス構成を目的としています。閉域化されるのは接続先の Azure サービス側であり、Power Platform 側は VNET 引き込みによって下り通信を委任サブネット経由に限定します。具体的には、次の 2 つの環境を対象とします。
 
 - **閉域PPFAZURE環境** … Power Platform をホストするサブスクリプション。ペアリージョン（`eastus` / `westus`）双方に委任サブネット付き VNET を用意し、Enterprise Policy で環境にサブネット インジェクションを適用して、Power Platform のアウトバウンドをこの VNET 経由に引き込みます。
-- **連携元AZURE環境** … 連携先の Azure サービス（本サンプルでは Azure Container Apps 上の MCP サーバー `contoso-policy-mcp`）を持つサブスクリプション。パブリックアクセスを無効化して**サービス側を閉域化**し、閉域PPF側からの Private Endpoint 接続を手動承認します。
+- **連携元AZURE環境** … 連携元の Azure サービス（本サンプルでは Azure Container Apps 上の MCP サーバー `contoso-policy-mcp`）を持つサブスクリプション。パブリックアクセスを無効化して**サービス側を閉域化**し、閉域PPF側からの Private Endpoint 接続を手動承認します。
 
 主な構成ポイント:
 
-- **クロスサブスクリプション／クロスリージョンの Private Link 引き込み**（連携先が別サブスク・別リージョンでも到達可能）
+- **クロスサブスクリプション／クロスリージョンの Private Link 引き込み**（連携元が別サブスク・別リージョンでも到達可能）
 - **US ジオグラフィのペアリージョン要件**（`eastus` + `westus` の委任サブネット + 双方向 VNet Peering）
 - **Private DNS Zone による名前解決**（プライベート FQDN → Private Endpoint のプライベート IP）
 - **Copilot Studio から PE 経由で MCP を利用**（Streamable HTTP `/mcp`）
@@ -140,13 +140,13 @@ flowchart LR
 
 | 項目 | 要件 |
 |---|---|
-| **連携先サービスが Private Endpoint に対応** | 連携先が Private Endpoint（Private Link）をサポートするサービスであること。本手順ではAzure Container Apps を使っているが、Private Link 対応サービス（App Service / Azure Functions / Storage / Key Vault / SQL 等）であれば同じ考え方で閉域引き込みできる |
+| **連携元サービスが Private Endpoint に対応** | 連携元が Private Endpoint（Private Link）をサポートするサービスであること。本手順ではAzure Container Apps を使っているが、Private Link 対応サービス（App Service / Azure Functions / Storage / Key Vault / SQL 等）であれば同じ考え方で閉域引き込みできる |
 | （ACA を使う場合の）環境の種別 | ACA では Private Endpoint は **Workload Profiles 環境**のみ対応（新規 `az containerapp env` の既定）。Consumption 専用環境は再作成が必要。他サービスを使う場合は各サービスの PE 対応要件・SKU 条件を満たすこと |
 | 公開アクセス | `publicNetworkAccess = Disabled`（閉域化）。PE 接続を**手動承認**する権限が必要 |
-| クロスサブスク／リージョン | Private Link はクロスサブスクリプション／クロスリージョン対応のため、連携先が `japaneast`、PE が `eastus` でも引き込み可能 |
+| クロスサブスク／リージョン | Private Link はクロスサブスクリプション／クロスリージョン対応のため、連携元が `japaneast`、PE が `eastus` でも引き込み可能 |
 
 <details>
-<summary><strong>📎 参考: Private Link service Direct Connect（Public Preview）</strong> — 連携先が「PE に直接対応していないサービス」や「オンプレ／任意の私設 IP のワークロード」の場合の選択肢。通常の <a href="https://learn.microsoft.com/azure/private-link/private-link-service-overview">Private Link service</a> は Standard Load Balancer の背後にあるサービスを公開するが、<strong>Direct Connect</strong> はその Private Link service を <strong>ロードバランサーや IP フォワーディング VM 無しで、任意の「私設ルーティング可能な宛先 IP」に直接つなげる</strong>機能（クリックで展開）</summary>
+<summary><strong>📎 参考: Private Link service Direct Connect（Public Preview）</strong> — 連携元が「PE に直接対応していないサービス」や「オンプレ／任意の私設 IP のワークロード」の場合の選択肢。通常の <a href="https://learn.microsoft.com/azure/private-link/private-link-service-overview">Private Link service</a> は Standard Load Balancer の背後にあるサービスを公開するが、<strong>Direct Connect</strong> はその Private Link service を <strong>ロードバランサーや IP フォワーディング VM 無しで、任意の「私設ルーティング可能な宛先 IP」に直接つなげる</strong>機能（クリックで展開）</summary>
 
 - **メリット**: LB/転送 VM の作成・保守が不要、中間ホップが減り低レイテンシ、静的 IP ベースのワークロード（DB 接続・カスタムアプリ等）に最適、コスト削減。
 - **利用形態**: 作成した Private Link service の ID を、コンシューマー側の Private Endpoint（や Fabric の Managed Private Endpoint 等）から参照して使う。
