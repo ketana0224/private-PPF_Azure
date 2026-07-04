@@ -20,6 +20,11 @@
 
 > 📚 **参考**: [Virtual Network のサポートの概要 — Power Platform | Microsoft Learn](https://learn.microsoft.com/ja-jp/power-platform/admin/vnet-support-overview)
 
+## 本リポジトリを作成した目的
+
+- Power Platform（及び Copilot Studio）環境は Microsoft 365 テナント、Azure は別テナントで構成されているケースの解決方法として
+- Power Platform（及び Copilot Studio）環境から Azure を経由することにより、Azure の Private Link 機能で Azure 以外のクラウドやオンプレミスと安全に連携するための解決方法として
+
 ---
 
 > 📝 **プレースホルダについて**: 以降の `<...>` 表記（例 `<PPF_TENANT_ID>`）は環境ごとに異なる変動値です。実際の値に置き換えて使用してください。
