@@ -75,13 +75,7 @@
 Power Platform の VNET サポートは「US ジオグラフィ」の場合、**ペアリージョン（`eastus` と `westus`）双方**に委任サブネットを持つ 2 つの VNET が必須です（環境が両リージョン間でフェイルオーバーするため）。連携元 ACA は `japaneast` にあるため、閉域PPF側 VNET から**リージョンをまたいだ Private Endpoint**（Private Link はクロスリージョン／クロスサブスクリプション対応）で引き込みます。
 
 ```mermaid
-flowchart TB
-    subgraph SRC["連携元AZURE サブスク (SRC_SUBSCRIPTION_ID) / rg-mcps / japaneast"]
-        direction LR
-        ACAENV["Container Apps 環境<br/>(Workload Profiles / Public Access: Disabled)"]
-        ACAAPP["contoso-policy-mcp<br/>(MCP: /mcp)"]
-    end
-
+flowchart LR
     subgraph PPF["閉域PPFAZURE サブスク (PPF_SUBSCRIPTION_ID) / rg-privateppf"]
         direction TB
         PPENV["Power Platform 環境<br/>(Managed Environment / US geo)"]
@@ -95,6 +89,11 @@ flowchart TB
             DELW["snet-ppf-delegated 10.20.1.0/24<br/>→ Microsoft.PowerPlatform/enterprisePolicies"]
         end
         PDNS["Private DNS Zone<br/>privatelink.japaneast.azurecontainerapps.io"]
+    end
+
+    subgraph SRC["連携元AZURE サブスク (SRC_SUBSCRIPTION_ID) / rg-mcps / japaneast"]
+        ACAENV["Container Apps 環境<br/>(Workload Profiles / Public Access: Disabled)"]
+        ACAAPP["contoso-policy-mcp<br/>(MCP: /mcp)"]
     end
 
     PPENV -. 委任 .-> EP
