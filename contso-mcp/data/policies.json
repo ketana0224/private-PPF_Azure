@@ -1,0 +1,83 @@
+{
+  "currency": "JPY",
+  "returns": {
+    "window_days": 30,
+    "within_window_refund": "full_refund",
+    "after_window_refund": "store_credit",
+    "required": ["購入証明（レシートまたは注文番号）", "未使用・元の状態"],
+    "categories": {
+      "general": {
+        "returnable": true,
+        "note": "標準ポリシー（30日以内 全額返金、超過後は店舗クレジット）に従います。"
+      },
+      "digital": {
+        "returnable": false,
+        "note": "ダウンロード済みのデジタル商品は返品対象外です。"
+      },
+      "perishable": {
+        "returnable": false,
+        "note": "食品など生鮮・消耗品は衛生上の理由で返品対象外です。"
+      },
+      "clearance": {
+        "returnable": false,
+        "note": "アウトレット/クリアランス品は最終販売（返品不可）です。"
+      }
+    }
+  },
+  "shipping": {
+    "domestic": {
+      "available": true,
+      "free_shipping_threshold": 5000,
+      "standard_fee": 500,
+      "estimated_days": "2〜4営業日",
+      "express_fee": 1200,
+      "express_days": "翌営業日"
+    },
+    "international": {
+      "available": true,
+      "base_fee": 2000,
+      "estimated_days": "7〜14営業日",
+      "restricted_countries": ["該当なし（主要国へ配送可）"],
+      "note": "国・地域により関税や追加日数が発生する場合があります。"
+    }
+  },
+  "payment": {
+    "methods": [
+      "クレジットカード",
+      "デビットカード",
+      "コンビニ支払い",
+      "銀行振込",
+      "電子マネー",
+      "Contoso ポイント"
+    ],
+    "installments": {
+      "credit_card": "最大24回まで分割可能",
+      "others": "分割不可（一括のみ）"
+    },
+    "refund_processing_days": {
+      "クレジットカード": "5〜10営業日",
+      "デビットカード": "7〜14営業日",
+      "コンビニ支払い": "7〜14営業日（銀行口座への返金）",
+      "銀行振込": "7〜14営業日",
+      "電子マネー": "5〜10営業日",
+      "Contoso ポイント": "即時（ポイント返却）"
+    },
+    "note": "返金は元の支払い方法に対して行います。"
+  },
+  "loyalty": {
+    "earn_rate_per_100_jpy": 1,
+    "redeem_value_jpy_per_point": 1,
+    "expiry_months": 12,
+    "expiry_note": "最終のポイント獲得または利用から12か月で失効します。",
+    "tiers": {
+      "regular": {"earn_multiplier": 1.0},
+      "gold": {"earn_multiplier": 1.5},
+      "platinum": {"earn_multiplier": 2.0}
+    },
+    "customers": {
+      "C-1001": {"name": "山田 太郎", "tier": "gold", "balance": 1250},
+      "C-1002": {"name": "佐藤 花子", "tier": "platinum", "balance": 8400},
+      "C-1003": {"name": "鈴木 次郎", "tier": "regular", "balance": 320}
+    }
+  }
+}
