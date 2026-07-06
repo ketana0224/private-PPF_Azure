@@ -1,16 +1,27 @@
-# private-PPF_Azure — Power Platform から閉域 Azure へのプライベート接続構築
+# private-PPF_Azure — Power Platform から「別テナント」の閉域 Azure へのプライベート接続構築
 
 ## 概要
 
-本リポジトリは、**Power Platform 環境のアウトバウンド通信を VNET 引き込み（サブネット委任）で自社 VNET 経由に固定**し、そこから**別サブスクリプション上の閉域化された Azure サービス（Azure Container Apps 上の MCP サーバー）へ Private Endpoint 経由で到達**させる、エンドツーエンドの構築手順とサンプル資材をまとめたものです。
+本リポジトリの**一番の主目的は、テナントをまたいだ（マルチテナント）閉域接続**です。すなわち、
+**Power Platform（Copilot Studio）環境が属するテナント**から、**別の Entra テナントにある Azure サービス**へ、
+インターネットを経由せず **Private Endpoint（Private Link）経由でプライベート接続**するリファレンス構成をまとめています。
 
-インターネットへ経路を出さずに、Power Platform（Copilot Studio エージェント）から社内 API 相当のサービスへ**プライベート接続**するリファレンス構成を目的としています。閉域化されるのは接続先の Azure サービス側であり、Power Platform 側は VNET 引き込みによって下り通信を委任サブネット経由に限定します。具体的には、次の 2 つの環境を対象とします。
+これを実現するために、Power Platform 側は **VNET 引き込み（サブネット委任）**でアウトバウンドを自社 VNET に固定し、
+連携元の Azure サービス（本サンプルでは Azure Container Apps 上の MCP サーバー `contoso-policy-mcp`）はパブリックアクセスを無効化して閉域化します。
+対象は次の 2 つの環境で、**両者は異なる Entra テナントに属します**。
 
-- **閉域PPFAZURE環境** … Power Platform をホストするサブスクリプション。ペアリージョン（`eastus` / `westus`）双方に委任サブネット付き VNET を用意し、Enterprise Policy で環境にサブネット インジェクションを適用して、Power Platform のアウトバウンドをこの VNET 経由に引き込みます。
-- **連携元AZURE環境** … 連携元の Azure サービス（本サンプルでは Azure Container Apps 上の MCP サーバー `contoso-policy-mcp`）を持つサブスクリプション。パブリックアクセスを無効化して**サービス側を閉域化**し、閉域PPF側からの Private Endpoint 接続を手動承認します。
+- **閉域PPFAZURE環境（テナント `<PPF_TENANT_ID>`）** … Power Platform をホストするテナント／サブスクリプション。ペアリージョン（`eastus` / `westus`）双方に委任サブネット付き VNET を用意し、Enterprise Policy で環境にサブネット インジェクションを適用して、Power Platform のアウトバウンドをこの VNET 経由に引き込みます。
+- **連携元AZURE環境（テナント `<SRC_TENANT_ID>` ＝別テナント）** … 連携元の Azure サービス（本サンプルでは Azure Container Apps 上の MCP サーバー `contoso-policy-mcp`）を持つ**別テナント**のサブスクリプション。パブリックアクセスを無効化して**サービス側を閉域化**し、閉域PPF側からの Private Endpoint 接続を**手動承認**します。
+
+> **🎯 ここが要点（テナント境界の整理）**
+> - **Power Platform 環境 ↔ VNET / Enterprise Policy を持つ閉域PPF側サブスク** … サブネット インジェクションの制約上、**必ず同一テナント（`<PPF_TENANT_ID>`）**である必要があります。
+> - **閉域PPF側 ↔ 連携元AZURE（Private Endpoint 接続）** … Private Link は**クロステナント接続に対応**しているため、**連携元が別テナント（`<SRC_TENANT_ID>`）でも到達可能**です。PE 接続は連携元テナント側で**手動承認**します。
+>
+> つまり「同一テナントが必須なのは PP 環境と VNET/Enterprise Policy の側だけ」で、**接続先の Azure は別テナントでよい**、という点が本構成の核心です。
 
 主な構成ポイント:
 
+- **★ クロステナント（マルチテナント）の Private Link 引き込み**（連携元が別テナントでも、手動承認で PE 接続できる）
 - **クロスサブスクリプション／クロスリージョンの Private Link 引き込み**（連携元が別サブスク・別リージョンでも到達可能）
 - **US ジオグラフィのペアリージョン要件**（`eastus` + `westus` の委任サブネット + 双方向 VNet Peering）
 - **Private DNS Zone による名前解決**（プライベート FQDN → Private Endpoint のプライベート IP）
@@ -22,7 +33,7 @@
 
 ## 本リポジトリを作成した目的
 
-- Power Platform（及び Copilot Studio）環境は Microsoft 365 テナント、Azure は別テナントで構成されているケースの解決方法として
+- **【主目的】Power Platform（及び Copilot Studio）環境が属するテナントと、連携先の Azure が属するテナントが異なる（マルチテナント）ケースで、両者を閉域（Private Endpoint）でつなぐ**ための解決方法として
 - Power Platform（及び Copilot Studio）環境から Azure を経由することにより、Azure の Private Link 機能で Azure 以外のクラウドやオンプレミスと安全に連携するための解決方法として
 
 ---
@@ -68,7 +79,7 @@
 
 ## 手順
 
-> **ゴール**: 閉域PPFAZURE環境（`<PPF_SUBSCRIPTION_NAME>` / `eastus2`）の Power Platform 環境を VNET 引き込み（サブネット委任）で閉域化し、そこから**別サブスクリプション**（`<SRC_SUBSCRIPTION_NAME>` / `japaneast`）にある Azure Container Apps（`contoso-policy-mcp`）へ **Private Endpoint 経由**で到達できるようにする。両サブスクリプションは**同一テナント** `<PPF_TENANT_ID>` に属する。
+> **ゴール**: 閉域PPFAZURE環境（`<PPF_SUBSCRIPTION_NAME>` / `eastus2` / テナント `<PPF_TENANT_ID>`）の Power Platform 環境を VNET 引き込み（サブネット委任）で閉域化し、そこから**別テナント（`<SRC_TENANT_ID>`）の別サブスクリプション**（`<SRC_SUBSCRIPTION_NAME>` / `japaneast`）にある Azure Container Apps（`contoso-policy-mcp`）へ **Private Endpoint 経由**で到達できるようにする。**Power Platform 環境と VNET/Enterprise Policy を持つ閉域PPF側は同一テナント**（`<PPF_TENANT_ID>`）**だが、連携元 Azure は別テナントでよい**（Private Link はクロステナント接続に対応し、PE 接続は連携元テナントで手動承認する）。
 
 ### アーキテクチャ全体像
 
@@ -133,7 +144,7 @@ flowchart LR
 
 | 項目 | 要件 |
 |---|---|
-| **Power Platform と同一テナント** | **大前提**。この VNET／Enterprise Policy を持つ Azure サブスク（`<PPF_SUBSCRIPTION_ID>`）は、対象 Power Platform 環境と**同一 Entra テナント（`<PPF_TENANT_ID>`）**に属していること。テナントが異なるとサブネット インジェクションのリンク（環境への Enterprise Policy 適用）ができない |
+| **Power Platform と VNET/Enterprise Policy は同一テナント** | **大前提**。VNET／Enterprise Policy を持つ閉域PPF側 Azure サブスク（`<PPF_SUBSCRIPTION_ID>`）は、対象 Power Platform 環境と**同一 Entra テナント（`<PPF_TENANT_ID>`）**に属すること。サブネット インジェクション（環境への Enterprise Policy 適用）は同一テナント内でのみ行える。<br/>※ **連携元 Azure（`<SRC_TENANT_ID>`）は別テナントでよい**。同一テナントが必須なのはこの PP環境↔VNET/Policy の対だけで、PE でつなぐ接続先には適用されない |
 | **VNET のペアリージョン** | **必須**。環境ジオのペアリージョン**双方**に VNET が必要（US geo は `eastus` + `westus`）。環境は両リージョン間でフェイルオーバーするため、片方だけでは不可 |
 | **各 VNET の委任サブネット** | 両 VNET に `Microsoft.PowerPlatform/enterprisePolicies` へ**委任したサブネット**が 1 つずつ必要 |
 | 委任サブネットのサイズ | 2 つの委任サブネットは**同じ利用可能 IP 数**にすること（本手順は両方 `/24`）。`/24` 未満（小さすぎ）は不可 |
@@ -150,7 +161,7 @@ flowchart LR
 | **連携元サービスが Private Endpoint に対応** | 連携元が Private Endpoint（Private Link）をサポートするサービスであること。本手順ではAzure Container Apps を使っているが、Private Link 対応サービス（App Service / Azure Functions / Storage / Key Vault / SQL 等）であれば同じ考え方で閉域引き込みできる |
 | （ACA を使う場合の）環境の種別 | ACA では Private Endpoint は **Workload Profiles 環境**のみ対応（新規 `az containerapp env` の既定）。Consumption 専用環境は再作成が必要。他サービスを使う場合は各サービスの PE 対応要件・SKU 条件を満たすこと |
 | 公開アクセス | `publicNetworkAccess = Disabled`（閉域化）。PE 接続を**手動承認**する権限が必要 |
-| クロスサブスク／リージョン | Private Link はクロスサブスクリプション／クロスリージョン対応のため、連携元が `japaneast`、PE が `eastus` でも引き込み可能 |
+| クロスサブスク／テナント／リージョン | Private Link はクロスサブスクリプション／**クロステナント**／クロスリージョンに対応するため、連携元が**別テナント**（`<SRC_TENANT_ID>`）かつ `japaneast`、PE が `eastus` でも引き込み可能。クロステナントの PE 接続は連携元テナント側で**手動承認**する |
 
 <details>
 <summary><strong>📎 参考: Private Link service Direct Connect（Public Preview）</strong> — 連携元が「PE に直接対応していないサービス」や「オンプレ／任意の私設 IP のワークロード」の場合の選択肢。通常の <a href="https://learn.microsoft.com/azure/private-link/private-link-service-overview">Private Link service</a> は Standard Load Balancer の背後にあるサービスを公開するが、<strong>Direct Connect</strong> はその Private Link service を <strong>ロードバランサーや IP フォワーディング VM 無しで、任意の「私設ルーティング可能な宛先 IP」に直接つなげる</strong>機能（クリックで展開）</summary>
@@ -171,7 +182,7 @@ flowchart LR
 |---|---|
 | Azure ロール（両サブスク） | `Network Contributor` 相当（VNET / サブネット / Peering / Private Endpoint / Enterprise Policy 作成用）。PE 承認には ACA 側リソースの `Contributor` 相当も必要 |
 | CLI / モジュール | Azure CLI (`az`) 2.60+、PowerShell 7+、`Microsoft.PowerPlatform.EnterprisePolicies` モジュール、`az extension add --name containerapp` |
-| テナント | 本手順は 2 サブスクが**同一テナント（`<PPF_TENANT_ID>`）**の前提。クロステナント時は各操作で対象テナント／サブスクを明示すること |
+| テナント | 本手順は閉域PPF側（PP環境 + VNET/Enterprise Policy）が**同一テナント（`<PPF_TENANT_ID>`）**、**連携元 Azure が別テナント（`<SRC_TENANT_ID>`）**のマルチテナント前提。連携元側の操作（PE 承認等）は対象テナント／サブスクにサインインし直して実行する |
 
 > **⚠️ 委任サブネットのアドレス範囲は後から変更できません**（変更には Microsoft サポート依頼が必要）。将来の負荷を見込んでサイズを決めてください。
 >
@@ -193,14 +204,16 @@ $vnetWestName = "vnet-ppf-westus"
 $delegatedSubnet = "snet-ppf-delegated"
 $peSubnet        = "snet-pe"
 
-# ===== 連携元AZURE環境 =====
+# ===== 連携元AZURE環境（別テナント） =====
+$srcTenant   = "<SRC_TENANT_ID>"
 $srcSub      = "<SRC_SUBSCRIPTION_ID>"
 $srcRg       = "rg-mcps"
 $srcLocation = "japaneast"
 $acaAppName  = "contoso-policy-mcp"
 
-# サインイン（同一テナント内の 2 サブスク）
-az login --tenant $ppfTenant
+# サインイン（マルチテナント：閉域PPF側と連携元側をそれぞれのテナントでサインインしておく）
+az login --tenant $ppfTenant   # 閉域PPF側（VNET / Enterprise Policy / PE 作成）
+az login --tenant $srcTenant   # 連携元側（ACA 閉域化 / PE 承認）— 別テナントのため別途サインインが必要
 ```
 
 ---
@@ -208,6 +221,8 @@ az login --tenant $ppfTenant
 ### フェーズ 1 — 連携元 ACA を Private Endpoint 対応にする
 
 Private Endpoint は Container Apps の **Workload Profiles 環境**でのみサポートされ、有効化には**環境のパブリックネットワークアクセスを無効化**します。
+
+> **📌 別テナントの操作**: 連携元 ACA は**別テナント（`<SRC_TENANT_ID>`）**にあります。フェーズ 0 で `az login --tenant $srcTenant` を済ませておき、以降 `az account set --subscription $srcSub` で連携元テナントのコンテキストに切り替えて操作します。
 
 まず対象の Container App が**既に存在するか**を確認し、存在すれば **パターン A（既存を PE 化）**、存在しなければ **パターン B（新規作成 → PE 化）** に進みます。
 
@@ -375,13 +390,14 @@ Enable-SubnetInjection `
 
 ### フェーズ 4 — ACA への Private Endpoint を作成（クロスサブスク／クロスリージョン）
 
-閉域PPF側 VNET（`eastus`）の PE サブネットに、連携元サブスクの ACA 環境を指す Private Endpoint を作成します。異なるサブスクリプションのリソースを指すため接続は **Pending** となり、連携元側での**承認**が必要です。
+閉域PPF側 VNET（`eastus`）の PE サブネットに、**別テナント**の連携元サブスクの ACA 環境を指す Private Endpoint を作成します。異なるテナント／サブスクリプションのリソースを指すため接続は **Pending** となり、連携元テナント側での**承認**が必要です。
+
+> **📌 クロステナントでの PE 作成・承認のポイント**: PE の作成には連携元リソースの**リソース ID** が分かっていればよく、作成自体は閉域PPFテナント側の権限で可能（`--manual-request true`）。**承認は連携元テナントにサインインし直して**（`az login --tenant $srcTenant`）実行する。両テナントで対象サブスクへの権限（作成側 = Network Contributor、承認側 = ACA リソースの Contributor 相当）を持つアカウントが必要。
 
 ```powershell
-# 4-1. PE を PPF サブスクの eastus VNET に作成（--private-connection-resource-id は連携元の環境 ID）
-az account set --subscription $ppfSub
+# 4-1. PE を PPF サブスクの eastus VNET に作成（--private-connection-resource-id は別テナントの連携元環境 ID）
+az account set --subscription $ppfSub   # 閉域PPFテナントのコンテキスト
 $peSubnetId = az network vnet subnet show -g $ppfRg --vnet-name $vnetEastName -n $peSubnet --query id -o tsv
-
 az network private-endpoint create `
   --resource-group $ppfRg `
   --name "pe-contoso-mcp" `
@@ -392,7 +408,8 @@ az network private-endpoint create `
   --connection-name "conn-contoso-mcp" `
   --manual-request true
 
-# 4-2. 連携元サブスク側で Pending 接続を承認
+# 4-2. 連携元テナントにサインインし直して Pending 接続を承認（クロステナントのため --tenant を切り替える）
+az login --tenant $srcTenant
 az account set --subscription $srcSub
 $pecId = az network private-endpoint-connection list --id $envId `
   --query "[?properties.privateLinkServiceConnectionState.status=='Pending'].id | [0]" -o tsv
@@ -569,8 +586,9 @@ Copilot Studio で設定する前に、委任サブネットから MCP エンド
 | 委任サブネット範囲変更 | 委任後の CIDR 変更は不可。Microsoft サポート依頼が必要 |
 | Enterprise Policy 解除 | GUI では不可。`Disable-SubnetInjection` のみ |
 | コスト | Private Endpoint は Private Link 料金 + ACA の「Dedicated Plan Management」料金が発生（Consumption/Dedicated 双方に課金） |
-| クロスサブスク承認 | PE 接続は連携元サブスクで承認が必要（同一テナントのため手動承認で完結） |
+| クロスサブスク承認 | PE 接続は連携元テナント／サブスクにサインインし直して承認が必要（別テナントのため、承認側テナントに権限を持つアカウントで手動承認する） |
 | フェイルオーバー | US ジオは eastus/westus 双方に委任サブネットと DNS リンクが必要（片側のみだと片系障害時に解決不可） |
+| テナント境界 | 同一テナント必須なのは「PP 環境 ↔ VNET/Enterprise Policy（閉域PPF側）」のみ。連携元 Azure は別テナントで可（PE はクロステナント手動承認） |
 
 ### クリーンアップ（検証環境を破棄する場合）
 
