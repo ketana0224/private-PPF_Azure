@@ -85,16 +85,26 @@
 
 Power Platform の VNET サポートは「US ジオグラフィ」の場合、**ペアリージョン（`eastus` と `westus`）双方**に委任サブネットを持つ 2 つの VNET が必須です（環境が両リージョン間でフェイルオーバーするため）。連携元 ACA は `japaneast` にあるため、閉域PPF側 VNET から**リージョンをまたいだ Private Endpoint**（Private Link はクロスリージョン／クロスサブスクリプション対応）で引き込みます。
 
+> **📶 Power Platform の通信は 2 系統ある点に注意**（VNET サポートが効くのは②のみ）
+> - **① UI／管理系（ユーザーアクセス）** … 利用者・メーカーのブラウザから Copilot Studio / Power Apps などの**パブリックエンドポイントへインターネット経由でアクセス**します。これは VNET サポート（サブネット インジェクション）の**対象外**で、従来どおり公開経路です。
+> - **② データ／実行系（下り送信）** … **コネクタ／プラグインの実行時アウトバウンド**のみが委任サブネットに注入され、VNET → Private Endpoint 経由で Azure（本サンプルでは ACA 上の MCP）へ到達します。**本構成で閉域化されるのはこの②の経路**です。
+>
+> つまり「Power Platform の全通信が VNET を通る」わけではなく、**閉域化されるのはコネクタ／プラグインの下り送信（②）だけ**という点に注意してください。
+
 ![アーキテクチャ全体像](Architecture.png)
+
+📊 [PowerPoint 版アーキテクチャ図を開く（Architecture.pptx）](Architecture.pptx)
 
 <details>
 <summary>クリックして開く（Mermaid ソース）</summary>
 
 ```mermaid
 flowchart LR
+    USER["利用ユーザー / メーカー<br/>(ブラウザ)"]
+    PPENV["Power Platform 環境<br/>(Managed Environment / US geo)<br/>※Microsoft 管理基盤（Azure サブスク外）"]
+
     subgraph PPF["閉域PPFAZURE サブスク (PPF_SUBSCRIPTION_ID) / rg-privateppf"]
         direction TB
-        PPENV["Power Platform 環境<br/>(Managed Environment / US geo)"]
         EP["Enterprise Policy<br/>(NetworkInjection / unitedstates)"]
         subgraph VNE["vnet-ppf-eastus (10.10.0.0/16)"]
             DELE["snet-ppf-delegated 10.10.1.0/24<br/>→ Microsoft.PowerPlatform/enterprisePolicies"]
@@ -112,16 +122,18 @@ flowchart LR
         ACAAPP["contoso-policy-mcp<br/>(MCP: /mcp)"]
     end
 
-    PPENV -. 委任 .-> EP
-    EP --- DELE
-    EP --- DELW
+    USER -->|"UI/管理アクセス（インターネット経由・公開 / VNET 対象外）"| PPENV
+    PPENV -. リンク (Enable-SubnetInjection) .-> EP
+    EP ---|対象 VNET/委任サブネット| DELE
+    EP ---|対象 VNET/委任サブネット| DELW
     PESN --- PE
     PE ==>|Private Link / 承認済み| ACAENV
     ACAENV --- ACAAPP
     VNE <-->|VNet Peering| VNW
-    PDNS -.リンク.-> VNE
-    PDNS -.リンク.-> VNW
-    PPENV -->|委任サブネット経由の下り通信| PE
+    PE -.A レコード登録.-> PDNS
+    PDNS -.VNet リンク.-> VNE
+    PDNS -.VNet リンク.-> VNW
+    PPENV -->|コネクタ/プラグイン実行時の下り通信（委任サブネットへ注入）| PE
 
     classDef srcBox fill:#ffe6cc,stroke:#d79b00,stroke-width:2px;
     class SRC srcBox;

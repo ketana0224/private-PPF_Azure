@@ -22,3 +22,8 @@ __pycache__/
 .DS_Store
 Thumbs.db
 .vscode/
+
+# Project-specific ignores
+*.py
+*.svg
+requirements.txt
